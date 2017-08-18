@@ -45,3 +45,4 @@ def build_scp_dict(scp_file):
         scp_dict[f_id] = f_value
     return scp_dict
 
+    
