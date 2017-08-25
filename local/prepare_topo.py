@@ -2,7 +2,7 @@ import sys
 import base
 import re
 NUM_SIL_STATES=5
-
+STATE_NUM_PER_PHONE=3
 def build_syllable_dictionary(dictionary_file):
     syllable_num_dict = {}
     for line in open(dictionary_file).readlines():
@@ -56,10 +56,10 @@ if __name__ == "__main__":
             fid.writelines("%s "%x)
         fid.writelines("\n")
         fid.writelines("</ForPhones>\n")
-        for state in range(0, phone_num):
+        for state in range(0, phone_num*STATE_NUM_PER_PHONE):
             statep1 = state + 1
             fid.writelines("<State> %d <PdfClass> %d <Transition> %d %.2f <Transition> %d %.2f </State>\n"%(state,state,state,0.75,statep1,0.25))
-        fid.writelines("<State> %d </State>\n"%(phone_num))
+        fid.writelines("<State> %d </State>\n"%(phone_num*STATE_NUM_PER_PHONE))
         fid.writelines("</TopologyEntry>\n")
 
 

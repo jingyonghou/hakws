@@ -2,7 +2,7 @@
 
 . ./cmd.sh
 . ./path.sh
-stage=6
+stage=8
 nj=20
 
 xiaoying_dir=/home/disk1/jyhou/data/XiaoYing_STD
@@ -15,9 +15,6 @@ if [ $stage -le 0 ]; then
     local/prepare_xiaoying_search_data.sh 
     #prepare dictionary file
     local/prepare_dict.sh
-    utils/prepare_lang.sh --position-dependent-phones false data/local/dict \
-         "<SIL>" data/local/lang data/lang
-    python local/prepare_topo.py data/lang info/syll.dict data/lang/topo
     local/prepare_lm.sh
 fi
 
@@ -62,51 +59,80 @@ if [ $stage -le 3 ]; then
 fi
 
 #mono training
-train_dir="sbnf1"
-if [ $stage -le 4 ]; then
-    steps/train_mono.sh --nj $nj --cmd "$train_cmd" \
-        --cmvn-opts "--norm-means=false --norm-vars=false" \
-        --totgauss 2000 \
-        $train_dir/keywords_60_100 data/lang exp/mono_keywords_60_100
-
-    steps/train_mono.sh --nj $nj --cmd "$train_cmd" \
+feature_dir="mfcc"
+if [ $stage -le 8 ]; then
+    utils/prepare_lang.sh --sil-prob 0.0 --position-dependent-phones false data/local/dict \
+         "<SIL>" data/local/lang data/lang
+    python local/prepare_topo.py data/lang/phones info/syll.dict data/lang/topo
+    local/train_mono.sh --nj $nj --cmd "$train_cmd" \
         --cmvn-opts "--norm-means=false --norm-vars=false" \
         --totgauss 1000 \
-        $train_dir/keywords_native data/lang exp/mono_keywords_native
+        $feature_dir/keywords_60_100 data/lang exp/mono_keywords_60_100
+
+   #steps/train_mono.sh --nj $nj --cmd "$train_cmd" \
+   #    --cmvn-opts "--norm-means=false --norm-vars=false" \
+   #    --totgauss 1000 \
+   #    $train_dir/keywords_native data/lang exp/mono_keywords_native
 fi
 
 
 #build decode graph for each keyword
-if [ $stage -le 5 ]; then
+nj=20
+model_dir="exp/mono_keywords_60_100"
+decode_dir="exp/decode"
+if [ $stage -le 8 ]; then
     export LC_ALL=C
-    model_dir="exp/mono_keywords_60_100"
-    decode_dir="exp/decode"
     lang="data/lang"
     mkdir -p $decode_dir
     
     cp $model_dir/tree $decode_dir/tree
     cp $model_dir/final.mdl $decode_dir/final.mdl
+    cp $model_dir/cmvn_opts $decode_dir/cmvn_opts 
     cat info/keywords.list |uniq|sort > $decode_dir/keywords_sort.list
     
     oov=`cat $lang/oov.int` || exit 1;
     keywords_list=$decode_dir/keywords_sort.list
     tras=$decode_dir/keywords.tras
     paste $keywords_list $keywords_list > $tras
-    tras="ark:utils/sym2int.pl --map-oov $oov -f 2- $lang/words.txt $decode_dir/keywords.tras|"
-    graphs=$decode_dir/graphs.fsts
+    utils/sym2int.pl --map-oov $oov -f 2- $lang/words.txt $decode_dir/keywords.tras > $decode_dir/keywords.tras.int
+    tras=$decode_dir/keywords.tras.int
+    mkdir -p tmp/
+    python local/split.py $tras tmp/ $nj
+    graphs=$decode_dir/graphs.JOB.fsts
     python local/convert_lexicon.py $lang/words.txt \
         $lang/phones.txt data/local/dict/lexicon.txt info/lexicon.int
-    
-    compile-keyword-graphs --read-disambig-syms=$lang/phones/disambig.int \
-        $decode_dir/tree $decode_dir/final.mdl  info/lexicon.int "$tras" ark:$graphs
+    run.pl JOB=1:$nj log/make_keywords_graphs.JOB.log \
+        compile-keyword-graphs --read-disambig-syms=$lang/phones/disambig.int \
+        $decode_dir/tree $decode_dir/final.mdl  info/lexicon.int "ark:tmp/keywords.tras.intJOB" ark:$graphs
 fi
 
 #decode
-if [ $stage -le 6 ]; then
-    for x in data_15_30 data_40_55 data_65_80; do 
-        test_scp=sbnf1/$x/feats.scp
+if [ $stage -le 8 ]; then
+    for x in data_65_80; do 
         result_dir=results/${x}_keywords_60_100_word
-        echo "iterating-viterbi-decoding $decode_dir/final.mdl $decode_dir/graphs.fsts scp:$test_scp $result_dir"
-             #iterating-viterbi-decoding $decode_dir/final.mdl $decode_dir/graphs.fsts scp:$test_scp $result_dir
+        mkdir -p $result_dir
+        local/akws_i.sh --scale_opts "--transition-scale=1.0 --acoustic-scale=0.1 --self-loop-scale=0.1" \
+                --nj $nj $feature_dir/$x $decode_dir $result_dir
     done
 fi
+
+#evaluate
+keyword_list_dir="/mnt/jyhou/feats/XiaoYing_STD/list/"
+data_list_dir="/mnt/jyhou/feats/XiaoYing_STD/list/"
+#ctm_file="/mnt/jyhou/workspace/my_egs/xiaoying_native/s5c/exp/nn_xiaoying_native_ali/ctm"
+text_file="info/text.dict"
+syllable_num_file="info/keyword_syllable_num.txt"
+keyword_list_file="info/keywords.list"
+
+if [ $stage -le 8 ]; then
+    for x in data_65_80;
+    do
+       
+       result_dir=results/${x}_keywords_60_100_word/
+       test_list_file=$feature_dir/$x/wav.scp
+       echo $result_dir
+       echo "python local/evaluate.py $result_dir $keyword_list_file $test_list_file $text_file $syllable_num_file"
+             python local/evaluate.py $result_dir $keyword_list_file $test_list_file $text_file $syllable_num_file
+    done
+fi
+
