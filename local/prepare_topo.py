@@ -2,7 +2,7 @@ import sys
 import base
 import re
 NUM_SIL_STATES=5
-STATE_NUM_PER_PHONE=3
+STATE_NUM_PER_PHONE=1
 def build_syllable_dictionary(dictionary_file):
     syllable_num_dict = {}
     for line in open(dictionary_file).readlines():

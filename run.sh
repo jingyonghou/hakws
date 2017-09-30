@@ -59,14 +59,14 @@ if [ $stage -le 3 ]; then
 fi
 
 #mono training
-feature_dir="mfcc"
+feature_dir="sbnf1"
 if [ $stage -le 8 ]; then
-    utils/prepare_lang.sh --sil-prob 0.0 --position-dependent-phones false data/local/dict \
+    utils/prepare_lang.sh --position-dependent-phones false data/local/dict \
          "<SIL>" data/local/lang data/lang
     python local/prepare_topo.py data/lang/phones info/syll.dict data/lang/topo
     local/train_mono.sh --nj $nj --cmd "$train_cmd" \
-        --cmvn-opts "--norm-means=false --norm-vars=false" \
-        --totgauss 1000 \
+        --cmvn-opts "--norm-means=true --norm-vars=false" \
+        --totgauss 3000 \
         $feature_dir/keywords_60_100 data/lang exp/mono_keywords_60_100
 
    #steps/train_mono.sh --nj $nj --cmd "$train_cmd" \
@@ -108,7 +108,7 @@ fi
 
 #decode
 if [ $stage -le 8 ]; then
-    for x in data_65_80; do 
+    for x in data_15_30 data_40_55 data_65_80; do 
         result_dir=results/${x}_keywords_60_100_word
         mkdir -p $result_dir
         local/akws_i.sh --scale_opts "--transition-scale=1.0 --acoustic-scale=0.1 --self-loop-scale=0.1" \
@@ -125,7 +125,7 @@ syllable_num_file="info/keyword_syllable_num.txt"
 keyword_list_file="info/keywords.list"
 
 if [ $stage -le 8 ]; then
-    for x in data_65_80;
+    for x in data_15_30 data_40_55 data_65_80;
     do
        
        result_dir=results/${x}_keywords_60_100_word/
